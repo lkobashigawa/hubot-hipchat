@@ -23,6 +23,8 @@
 {EventEmitter} = require "events"
 fs = require "fs"
 util = require "./util"
+Url = require "url"
+Redis = require "redis"
 {bind, isString, isRegExp} = require "underscore"
 # The xmpp module emits warnings about node-stringprep that are unfixable on
 # node 0.10+, so require it through our helper that suppresses console messages;
@@ -74,6 +76,12 @@ module.exports = class Connector extends EventEmitter
     @mucHost = "conf.#{if @host then @host else 'hipchat.com'}"
 
     @onError @disconnect
+    
+    #Connect to Redis to store room-state
+    info   = Url.parse process.env.REDISTOGO_URL || 'redis://localhost:6379'
+  	@redis = Redis.createClient(info.port, info.hostname)
+  	@redis.on "connect", ->
+      @logger.debug "Successfully connected to Redis"
 
   # Connects the connector to HipChat and sets the XMPP event listeners.
   connect: ->
@@ -194,6 +202,7 @@ module.exports = class Connector extends EventEmitter
       xmlns: "http://jabber.org/protocol/muc"
       maxstanzas: String(historyStanzas)
     @jabber.send packet
+    @redis.add('hipchat-rooms', roomJid)
 
   # Part the specified room.
   #
