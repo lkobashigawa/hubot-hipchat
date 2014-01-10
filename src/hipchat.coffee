@@ -61,7 +61,7 @@ class HipChat extends Adapter
       jid:        process.env.HUBOT_HIPCHAT_JID
       password:   process.env.HUBOT_HIPCHAT_PASSWORD
       token:      process.env.HUBOT_HIPCHAT_TOKEN or null
-      rooms:      process.env.HUBOT_HIPCHAT_ROOMS or "All"
+      rooms:      process.env.HUBOT_HIPCHAT_ROOMS or null
       host:       process.env.HUBOT_HIPCHAT_HOST or null
       autojoin:   process.env.HUBOT_HIPCHAT_JOIN_ROOMS_ON_INVITE isnt "false"
     @logger.debug "HipChat adapter options: #{JSON.stringify @options}"
@@ -104,6 +104,11 @@ class HipChat extends Adapter
         .done (users) =>
           saveUsers(users)
           # Join requested rooms
+          saved_rooms = @robot.brain.get('hipchat-joined-room-list') || {}
+          for room_jid,v of saved_rooms
+            @logger.info "Joining #{room_jid} saved in redis"
+            connector.join room_jid
+          
           if @options.rooms is "All" or @options.rooms is "@All"
             connector.getRooms (err, rooms, stanza) =>
               if rooms
@@ -167,7 +172,7 @@ class HipChat extends Adapter
             user.name = currentName if currentName.length
             @receive new PresenceMessage(user)
 
-      connector.onEnter (user_jid, room_jid, currentName) =>
+      connector.onEnter (user_jid, room_jid, currentName) =>        
         changePresence EnterMessage, user_jid, room_jid, currentName
 
       connector.onLeave (user_jid, room_jid) ->
@@ -184,6 +189,16 @@ class HipChat extends Adapter
         @logger.info "Got invite to #{room_jid} from #{from_jid} - #{action}"
         connector.join room_jid if @options.autojoin
 
+      connector.onJoin (room_jid) =>
+        rooms = @robot.brain.get('hipchat-joined-room-list') || {}
+        rooms[room_jid] = true
+        @robot.brain.set 'hipchat-joined-room-list', rooms
+
+      connector.onPart (room_jid) =>
+        rooms = @robot.brain.get 'hipchat-joined-room-list' || {}
+        delete rooms[room_jid]
+        @robot.brain.set 'hipchat-joined-room-list', rooms
+        
     connector.connect()
 
     @connector = connector

@@ -23,8 +23,6 @@
 {EventEmitter} = require "events"
 fs = require "fs"
 util = require "./util"
-Url = require "url"
-Redis = require "redis"
 {bind, isString, isRegExp} = require "underscore"
 # The xmpp module emits warnings about node-stringprep that are unfixable on
 # node 0.10+, so require it through our helper that suppresses console messages;
@@ -76,12 +74,7 @@ module.exports = class Connector extends EventEmitter
     @mucHost = "conf.#{if @host then @host else 'hipchat.com'}"
 
     @onError @disconnect
-    
-    #Connect to Redis to store room-state
-    info   = Url.parse process.env.REDISTOGO_URL || 'redis://localhost:6379'
-  	@redis = Redis.createClient(info.port, info.hostname)
-  	@redis.on "connect", ->
-      @logger.debug "Successfully connected to Redis"
+
 
   # Connects the connector to HipChat and sets the XMPP event listeners.
   connect: ->
@@ -202,7 +195,7 @@ module.exports = class Connector extends EventEmitter
       xmlns: "http://jabber.org/protocol/muc"
       maxstanzas: String(historyStanzas)
     @jabber.send packet
-    @redis.add('hipchat-rooms', roomJid)
+    @emit "join", roomJid
 
   # Part the specified room.
   #
@@ -214,6 +207,7 @@ module.exports = class Connector extends EventEmitter
     packet.c 'x', xmlns: 'http://jabber.org/protocol/muc'
     packet.c('status').t('hc-leave')
     @jabber.send packet
+    @emit "part", roomJid    
 
   # Send a message to a room or a user.
   #
@@ -345,7 +339,11 @@ module.exports = class Connector extends EventEmitter
   onLeave: (callback) -> @on "leave", callback
 
   onRosterChange: (callback) -> @on "rosterChange", callback
-
+  
+  #callbacks for tracking what rooms we joined
+  onJoin: (callback) -> @on "join", callback
+  onPart: (callback) -> @on "part", callback
+  
   # Emitted whenever the connector pings the server (roughly every 30 seconds).
   #
   # - `callback`: Function to be triggered: `function ()`
